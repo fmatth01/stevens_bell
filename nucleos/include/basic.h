@@ -12,7 +12,7 @@
  *   DAC1->DHR12R1 = sample;
  */
  
-#define AUDIO_SAMPLE_RATE  44100U
+#define AUDIO_SAMPLE_RATE  1000U
 #define AUDIO_NUM_SAMPLES  4000U
  
 const int16_t audio_data[] = {
