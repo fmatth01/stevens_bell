@@ -1,0 +1,8 @@
+.DS_Store
+nucleos/.pio
+nucleos/.vscode/.browse.c_cpp.db*
+nucleos/.vscode/c_cpp_properties.json
+nucleos/.vscode/launch.json
+nucleos/.vscode/ipch
+nucleos/.vscode/extensions.json
+nucleos/.DS_Store
