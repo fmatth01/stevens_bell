@@ -5,3 +5,6 @@
 .vscode/ipch
 .vscode/extensions.json
 .DS_Store
+src/display.c
+include/display.h
+lib/ssd1306/src/*
