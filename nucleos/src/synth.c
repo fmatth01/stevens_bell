@@ -11,9 +11,6 @@ static int16_t ZERO_BUFFER[BUFFER_SIZE];
 // Final DAC out buffer lives here; top-right module (slot 7) writes into it.
 static int16_t DAC_OUT[BUFFER_SIZE];
 
-// bottom[3] has no right chain neighbor; top[7] reads its output via SRC_BOTM.
-static int16_t BOTM3_OUT[BUFFER_SIZE];
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Neighbor lookup. slot is 0..7. Returns NULL if off-grid.
@@ -27,8 +24,66 @@ static Module *neighbor_left(Synth *s, uint8_t slot)
 static Module *neighbor_bottom(Synth *s, uint8_t slot)
 {
     if (slot < 4)
-        return NULL; // bottom row has no bottom neighbor
+        return NULL;              // bottom row has no bottom neighbor
     return &s->modules[slot - 4]; // top slot s → bottom slot s-4
+}
+
+// Set source
+static void set_source(Synth *s, Module *m, uint8_t src)
+{
+    // Set buffer var to the buffer we're changing the source of
+    int16_t *buffer;
+    uint8_t *source; // pointer to module's current source variable
+    // Update source for currently selected parameter in module view
+    switch (s->selected_param)
+    {
+    case SEL_INPUT:
+        buffer = m->input_buffer;
+        source = m->input_source;
+        break;
+
+    case SEL_PARAM1:
+        buffer = m->param1_buffer;
+        source = m->param1_source;
+        break;
+
+    case SEL_PARAM2:
+        buffer = m->param2_buffer;
+        source = m->param2_source;
+        break;
+
+    default:
+        break;
+    }
+
+    // Set the source of the current module to the updated value (src)
+    *source = src;
+
+    switch (src)
+    {
+    case SRC_LEFT:
+    {
+        Module *nl = neighbor_left(s, m->position);
+        if (nl)
+            nl->buffer_out = buffer;
+        break;
+    }
+    case SRC_BOTM:
+    {
+        Module *nb = neighbor_bottom(s, m->position);
+        if (nb)
+            nb->buffer_out = buffer;
+        break;
+    }
+    case SRC_WAVE:
+    // Assume wavetable loader has already done the appropriate stuff
+    case SRC_FLAT:
+    // No buffers to redirect
+    case SRC_KNOB:
+    // Taken care of in fill
+    default:
+        break;
+    }
 }
 
 // Fill a destination buffer from the given source. For FLAT/KNOB we write the
@@ -109,23 +164,27 @@ static void module_reset(Module *m, uint8_t type, uint8_t position)
 
 void synth_init(Synth *s)
 {
+    // Set entire synth struct to zeros
     memset(s, 0, sizeof(*s));
-    s->global_view = true;
+    s->global_view = false;
     s->selected_module = 7; // top right corner
-    s->selected_param = SEL_INPUT;
 
+    // Set every param1 in top row to output buffer of module below it (vertical arrows)
+    s->selected_param = SEL_PARAM1;
     for (uint8_t i = 0; i < NUM_MODULES; i++)
     {
         module_reset(&s->modules[i], MOD_EMP, i);
-        Module *m = &s->modules[i];
-        if (i < 3)           // bottom row 0,1,2 → chain right; top row reads via SRC_BOTM
-            m->buffer_out = s->modules[i + 1].input_buffer;
-        else if (i == 3)     // bottom-right: no right neighbor; top[7] reads this via SRC_BOTM
-            m->buffer_out = BOTM3_OUT;
-        else if (i < 7)      // top row 4,5,6 → chain right
-            m->buffer_out = s->modules[i + 1].input_buffer;
-        else                 // top-right (7) → DAC
-            m->buffer_out = DAC_OUT;
+        set_source(s, &s->modules[i], SRC_BOTM);
+    }
+
+    // Set all output buffers to the input buffers of neighbors (horizontal arrows)
+    s->selected_param = SEL_INPUT;
+    for (uint8_t i = 0; i < NUM_MODULES; i++)
+    {
+        if (i != 0 && i != 4) // Everything but left col
+        {
+            set_source(s, &s->modules[i], SRC_LEFT);
+        }
     }
 }
 
@@ -147,7 +206,9 @@ void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity)
     for (int i = 0; i < NUM_MODULES; i++)
     {
         Module *m = &s->modules[i];
+        // Grab the definition of the current module
         const ModuleDef *def = module_def(m->type);
+        // If the current module has a defined note_on fx pointer, use it
         if (def->note_on)
             def->note_on(m, midi_note, velocity);
     }
