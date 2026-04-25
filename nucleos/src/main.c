@@ -1,6 +1,8 @@
 #include "stm32l4xx.h"
 #include "basic.h"
 #include "clock.h"
+#include "display.h"
+#include "synth_types.h"
 
 // 
 // change sample rate to 44.1 khz !!!!!!
@@ -42,10 +44,15 @@ void SysTick_initialize(void) {
     SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
 }
 
+static Synth synth;
+
 int main(void) {
     SystemClock_Config();
-    SysTick_initialize();  
+    SysTick_initialize();
     enable_DAC();
+    synth_init(&synth);
+    display_init();
+    display_global_view(&synth);
     // timer_config_pwm(TIM2, 1000);
     while(1) {
         for (int i = 0; i < 4000; i++) {
