@@ -76,7 +76,7 @@ typedef struct Module
 } Module;
 
 // ── Module definition (one row of the "dictionary") ──────────────────────────
-typedef struct
+typedef struct ModuleDef
 {
     const char *name;         // "OSC" — shown as [OSC] in header
     const char *display_name; // long - form name
@@ -91,6 +91,9 @@ typedef struct
     uint8_t pr2_default_val;
 
     // Lifecycle. Any of these may be NULL. no idea what these do.
+    // OHHH each module may have up to all three of these, but don't need any
+    // These are the function pointers
+    // All functions used by any module ever will be encapsulated here
     void (*init)(Module *m);
     void (*process)(Module *m); // one buffer
     void (*note_on)(Module *m, uint8_t midi_note, uint8_t velocity);
@@ -107,7 +110,7 @@ static inline const ModuleDef *module_def(uint8_t type)
 }
 
 // ── Synth (top-level state) ──────────────────────────────────────────────────
-typedef struct
+typedef struct Synth
 {
     bool global_view; // true = Global view, false = Module view
     bool muted;       // toggled by Play / Stop
