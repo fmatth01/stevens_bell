@@ -1,0 +1,3 @@
+this folder handles uart communication between the raspberry pi and th stm 32.
+
+using code from lab 8 to handle uart on the stm32 side
