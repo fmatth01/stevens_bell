@@ -2,44 +2,83 @@
 #include "basic.h"
 #include "clock.h"
 #include "dma.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include "ee14lib.h"
 #include "synth_types.h"
+#include "display.h"
+
+// Definition of the Circular Buffer for reading midi data
+#define MIDI_BUF_SIZE 64
+static volatile uint8_t midi_buf[MIDI_BUF_SIZE];
+static volatile uint8_t midi_head = 0, midi_tail = 0;
 
 static Synth synth;
+static volatile bool needs_redraw = true;
 
-void audio_callback(uint16_t *buffer, uint16_t length) {
+void audio_callback(uint16_t *buffer, uint16_t length)
+{
     synth_process(&synth);
     int16_t *out = synth_get_output();
-    for (uint16_t i = 0; i < length; i++) {
+    for (uint16_t i = 0; i < length; i++)
+    {
+        // Shift into unsigned range and reduce to 12 bits
         buffer[i] = ((int32_t)out[i] + 32768) >> 4;
     }
 }
 
-int main(void) {
+// Interrupt Code for UART reading from pi
+// Pushes raw data packets into the circular buffer
+// so that the interrupt runs as fast as possible
+void USART1_IRQHandler(void)
+{
+    // Take raw bytes from Receive Data Register (bottom half)
+    // and turn off RXNE flag to indicate the bytes were read
+    uint8_t b = USART1->RDR & 0xFF;
+    // Get next index of circular buffer, looping around
+    uint8_t next = (midi_head + 1) % MIDI_BUF_SIZE;
+    // If the MIDI buffer is full, just drop the packet, otherwise store
+    if (next != midi_tail)
+        midi_buf[midi_head] = b;
+    // Update next
+    midi_head = next;
+}
+
+int main(void)
+{
+    // Initialization
     SystemClock_Config();
+    display_init();
     enable_DAC();
 
     synth_init(&synth);
-
-    // slot 0 = LFO
-    synth_set_module_type(&synth, 0, MOD_LFO);
-    synth.modules[0].param2_value = 100;  // very slow LFO
-    synth.modules[0].buffer_out = synth.modules[1].input_buffer;
-
-    // slot 1 = OSC
-    synth_set_module_type(&synth, 1, MOD_OSC);
-    synth.modules[1].param2_value = 63;
-    synth.modules[1].param1_value = 127;  // maximum depth
-    synth.modules[1].input_source = SRC_LEFT;
-    synth_wire_slot1_to_dac(&synth);
-
-    synth_note_on(&synth, 69, 127);
 
     audio_callback(dma_buffer, BUFFER_SIZE);
     audio_callback(dma_buffer + BUFFER_SIZE, BUFFER_SIZE);
 
     dma_configure();
-    timer_configure();
+    // timer_configure();
 
-    while (1) {}
+    update_display(&synth); // initial draw
+
+    // Main Loop
+    while (1)
+    {
+        // Drain MIDI circular buffer — redraw if any packet changes synth state
+        while (midi_head != midi_tail)
+        {
+            uint8_t b = midi_buf[midi_tail];
+            midi_tail = (midi_tail + 1) % MIDI_BUF_SIZE;
+            synth_unpack_packet(&synth, b);
+            needs_redraw = true;
+        }
+
+        if (needs_redraw)
+        {
+            update_display(&synth);
+            needs_redraw = false;
+        }
+    }
     return 0;
 }

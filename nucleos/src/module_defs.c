@@ -1,12 +1,14 @@
 #include "synth_types.h"
+#ifndef NATIVE_TEST
 #include "ee14lib.h"
 #include "dma.h"
-//#include "basic.h"
+#endif
+// #include "basic.h"
 #include "math.h"
 
 extern const int16_t audio_data[];
 #define AUDIO_NUM_SAMPLES 1024U
-//#define AUDIO_SAMPLE_RATE 1024U
+// #define AUDIO_SAMPLE_RATE 1024U
 #define AUDIO_SAMPLE_RATE 44100U
 // ── Forward declarations for the per-type functions ──────────────────────────
 // Each module type provides 0..3 of the following: init, process, note_on.
@@ -165,22 +167,27 @@ static void osc_note_on(Module *m, uint8_t n, uint8_t v)
     m->state_b = n; // hold current MIDI note → v/oct under the hood
 }
 
-static void osc_process(Module *m) {
-    if (!m->buffer_out) return;
+static void osc_process(Module *m)
+{
+    if (!m->buffer_out)
+        return;
 
     float freq = 20.0f * powf(2.0f, (m->param2_value / 127.0f) * 8.97f);
     uint32_t step = (uint32_t)(freq * (float)AUDIO_NUM_SAMPLES * 65536.0f / 44100.0f);
-    if (step == 0) step = 1;
+    if (step == 0)
+        step = 1;
 
-    for (int i = 0; i < BUFFER_SIZE; i++) {
+    for (int i = 0; i < BUFFER_SIZE; i++)
+    {
         // always read LFO from input_buffer
         // if no LFO connected, input_buffer will just be zeros (from fill_buffer default)
         int32_t lfo = m->input_buffer[i];
-        int32_t depth = m->param1_value / 2;  // back to subtle
+        int32_t depth = m->param1_value / 2; // back to subtle
         int32_t mod_step = (int32_t)step + (lfo * (int32_t)depth) / 256;
-        if (mod_step < 1) mod_step = 1;
+        if (mod_step < 1)
+            mod_step = 1;
 
-        uint32_t idx  = (m->state_a >> 16) % AUDIO_NUM_SAMPLES;
+        uint32_t idx = (m->state_a >> 16) % AUDIO_NUM_SAMPLES;
         uint32_t next = (idx + 1) % AUDIO_NUM_SAMPLES;
         uint32_t frac = m->state_a & 0xFFFF;
         int32_t s0 = audio_data[idx];
@@ -210,7 +217,7 @@ static void mix_process(Module *m)
 static void env_init(Module *m)
 {
     m->state_a = 0;
-    m->state_c = 0; //attack decay
+    m->state_c = 0; // attack decay
 }
 static void env_note_on(Module *m, uint8_t n, uint8_t v)
 {
@@ -233,15 +240,19 @@ static void hpf_process(Module *m) { /* TODO: biquad HP */ (void)m; }
 // ── LFO ──────────────────────────────────────────────────────────────────────
 static void lfo_init(Module *m) { m->state_a = 0; }
 
-static void lfo_process(Module *m) {
-    if (!m->buffer_out) return;
+static void lfo_process(Module *m)
+{
+    if (!m->buffer_out)
+        return;
 
     float freq = 0.01f * powf(2.0f, (m->param2_value / 127.0f) * 10.97f);
     uint32_t step = (uint32_t)(freq * (float)AUDIO_NUM_SAMPLES * 65536.0f / 44100.0f);
-    if (step == 0) step = 1;
+    if (step == 0)
+        step = 1;
 
-    for (int i = 0; i < BUFFER_SIZE; i++) {
-        uint32_t idx  = (m->state_a >> 16) % AUDIO_NUM_SAMPLES;
+    for (int i = 0; i < BUFFER_SIZE; i++)
+    {
+        uint32_t idx = (m->state_a >> 16) % AUDIO_NUM_SAMPLES;
         uint32_t next = (idx + 1) % AUDIO_NUM_SAMPLES;
         uint32_t frac = m->state_a & 0xFFFF;
         int32_t s0 = audio_data[idx];

@@ -57,7 +57,10 @@ static void set_source(Synth *s, Module *m, uint8_t src)
     }
 
     // Set the source of the current module to the updated value (src)
-    *source = src;
+    if (*source)
+    {
+        *source = src;
+    }
 
     switch (src)
     {
@@ -166,7 +169,9 @@ void synth_init(Synth *s)
 {
     // Set entire synth struct to zeros
     memset(s, 0, sizeof(*s));
-    s->global_view = false;
+    s->global_view = true;
+    // s->scope_on = true;
+    // s->scope_macro = true;
     s->selected_module = 7; // top right corner
 
     // Set every param1 in top row to output buffer of module below it (vertical arrows)
@@ -186,6 +191,9 @@ void synth_init(Synth *s)
             set_source(s, &s->modules[i], SRC_LEFT);
         }
     }
+
+    // Slot 7 (top-right) is the final output — wire its buffer_out to DAC_OUT.
+    s->modules[7].buffer_out = DAC_OUT;
 }
 
 void synth_set_module_type(Synth *s, uint8_t slot, uint8_t type)
@@ -202,6 +210,7 @@ void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity)
 {
     s->active_note = midi_note;
     // s->active_velocity = velocity; // stretch goal
+
     // Dispatch to every module that cares.
     for (int i = 0; i < NUM_MODULES; i++)
     {
@@ -219,6 +228,55 @@ void synth_note_off(Synth *s, uint8_t midi_note)
     (void)midi_note;
     s->active_note = 0;
     // Envelopes etc. that want a release stage can watch active_note.
+}
+
+void synth_update_cc(Synth *s, uint8_t cc_channel, uint8_t cc_val)
+{
+    switch (cc_channel)
+    {
+    case 1:
+        left_arrow(s);
+        break;
+    case 2:
+        right_arrow(s);
+        break;
+    case 3:
+        bouncing_arrow(s);
+        break;
+    case 4:
+        audio_wave(s);
+        break;
+    case 5:
+        play_button(s);
+        break;
+    case 6:
+        stop_button(s);
+        break;
+    case 7:
+        break; // record — unassigned
+    case 8:
+        rotating_arrows(s);
+        break;
+    case 9:
+    case 10:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+    case 15:
+    case 16:
+        // Knobs
+        s->knobs[cc_channel - 9] = cc_val;
+        break;
+    case 17:
+        // Top Slider
+        s->top_slider = cc_val;
+        break;
+    case 18:
+        // Bottom Slider
+        s->bottom_slider = cc_val;
+        break;
+    }
 }
 
 void synth_process(Synth *s)
@@ -246,14 +304,115 @@ void synth_process(Synth *s)
     // DAC_OUT now holds one buffer of 16-bit samples ready to push to the DAC.
 }
 
-int16_t *synth_get_output(void) {
+int16_t *synth_get_output(void)
+{
     return DAC_OUT;
 }
 
-void synth_wire_slot0_to_dac(Synth *s) {
-    s->modules[0].buffer_out = DAC_OUT;
+// Unpacks the packets put into the circular buffer by the UART
+// MIDI sends messages in three-byte sequences: Status, Data1, Data2
+void synth_unpack_packet(Synth *s, uint8_t b)
+{
+    // Only set to zero at compile time, otherwise persist like globals do
+    // Basically flags for our messages
+    static uint8_t msg_type = 0, data1 = 0, num_data = 0;
+
+    if (b >> 7)
+    { // status byte
+        msg_type = (b >> 4) & 0x7;
+        data1 = 0;
+        num_data = 0;
+    }
+    else if (num_data == 0)
+    { // first data byte
+        data1 = b & 0x7F;
+        num_data = 1;
+    }
+    else
+    { // second data byte — full message ready
+        uint8_t data2 = b & 0x7F;
+        num_data = 0;
+        if (msg_type == 0b001)
+            synth_note_on(s, data1, data2);
+        else if (msg_type == 0b000)
+            synth_note_off(s, data1);
+        else if (msg_type == 0b011)
+            synth_update_cc(s, data1, data2);
+    }
 }
 
-void synth_wire_slot1_to_dac(Synth *s) {
-    s->modules[1].buffer_out = DAC_OUT;
+void left_arrow(Synth *s)
+{
+    if (s->scope_on)
+    {
+        if (s->scope_skip_idx < SCOPE_SKIP_MAX_IDX)
+            s->scope_skip_idx++; // more skipped frames = slower refresh
+    }
+    else if (s->global_view)
+    {
+        // Decrement selected module
+        if (s->selected_module > 0)
+            s->selected_module--;
+    }
+    else
+    {
+        // Decrement selected param
+        if (s->selected_param > 0)
+            s->selected_param--;
+    }
+}
+
+void right_arrow(Synth *s)
+{
+    if (s->scope_on)
+    {
+        if (s->scope_skip_idx > 0)
+            s->scope_skip_idx--; // fewer skipped frames = faster refresh
+    }
+    else if (s->global_view)
+    {
+        // Increment selected module
+        if (s->selected_module < 7)
+            s->selected_module++;
+    }
+    else
+    {
+        // Increment selected param
+        if (s->selected_param < SEL_COUNT - 1)
+            s->selected_param++;
+    }
+}
+
+void bouncing_arrow(Synth *s)
+{
+    if (s->scope_on)
+    {
+        // Toggle macro/micro mode
+        s->scope_macro = !s->scope_macro;
+    }
+    else
+    {
+        uint8_t next = (s->modules[s->selected_module].type + 1) % MOD_TYPE_COUNT;
+        synth_set_module_type(s, s->selected_module, next);
+    }
+}
+
+void audio_wave(Synth *s)
+{
+    s->scope_on = !s->scope_on;
+}
+
+void play_button(Synth *s)
+{
+    s->muted = false;
+}
+
+void stop_button(Synth *s)
+{
+    s->muted = true;
+}
+
+void rotating_arrows(Synth *s)
+{
+    s->global_view = !s->global_view;
 }

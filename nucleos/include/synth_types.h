@@ -112,6 +112,8 @@ static inline const ModuleDef *module_def(uint8_t type)
 // ── Synth (top-level state) ──────────────────────────────────────────────────
 typedef struct Synth
 {
+    bool scope_macro; // true = macro mode, false = micro mode
+    bool scope_on;    // true = scope is displayed, false = global/module view
     bool global_view; // true = Global view, false = Module view
     bool muted;       // toggled by Play / Stop
 
@@ -127,16 +129,37 @@ typedef struct Synth
     // uint8_t  active_velocity;    // we don't want velocity yet, stretch goal
 
     Module modules[8]; // [0..3] bottom row, [4..7] top row
+
+    // Scope state
+    int16_t  scope_micro_buf[BUFFER_SIZE]; // micro: accumulated sample points
+    uint8_t  scope_micro_count;            // micro: samples collected so far
+    int16_t  scope_bar_min[128];           // macro: min value per bar column
+    int16_t  scope_bar_max[128];           // macro: max value per bar column
+    uint8_t  scope_bar_idx;               // macro: ring write position (0..127)
+    uint16_t scope_buf_counter;           // macro: buffers since last bar update
+    uint8_t  scope_skip_idx;             // index into skip sequence (0..SCOPE_SKIP_MAX_IDX)
+    uint16_t scope_frame_counter;         // collections since last display push
 } Synth;
+
+#define SCOPE_SKIP_MAX_IDX 9  // last valid index into {0,1,2,4,8,16,32,64,128,256}
 
 // ── API ──────────────────────────────────────────────────────────────────────
 void synth_init(Synth *s);
 void synth_set_module_type(Synth *s, uint8_t slot, uint8_t type); // slot 1..8
 void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity);
 void synth_note_off(Synth *s, uint8_t midi_note);
+void synth_update_cc(Synth *s, uint8_t controller, uint8_t value);
 void synth_process(Synth *s); // fills DAC out buffer for one tick
 int16_t *synth_get_output(void);
-void synth_wire_slot0_to_dac(Synth *s);
-void synth_wire_slot1_to_dac(Synth *s);
+void synth_unpack_packet(Synth *s, uint8_t b);
+
+// Button Triggered Functions
+void left_arrow(Synth *s);
+void right_arrow(Synth *s);
+void bouncing_arrow(Synth *s);
+void audio_wave(Synth *s);
+void play_button(Synth *s);
+void stop_button(Synth *s);
+void rotating_arrows(Synth *s);
 
 #endif // SYNTH_TYPES_H
