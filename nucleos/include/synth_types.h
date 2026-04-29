@@ -153,6 +153,12 @@ void synth_process(Synth *s); // fills DAC out buffer for one tick
 int16_t *synth_get_output(void);
 void synth_unpack_packet(Synth *s, uint8_t b);
 
+// Display test presets — call from main.c to load a known visual state
+void synth_preset_all_types(Synth *s);    // global view, all 7 module types
+void synth_preset_lfo_osc(Synth *s);     // global view, LFO→OSC chain + note
+void synth_preset_mixed_routing(Synth *s);// global view, H+V arrows
+void synth_inspect_module(Synth *s, uint8_t slot); // module view for one slot
+
 // Button Triggered Functions
 void left_arrow(Synth *s);
 void right_arrow(Synth *s);

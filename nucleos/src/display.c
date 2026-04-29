@@ -94,33 +94,37 @@ void display_init(void)
 }
 
 // ── Module view ───────────────────────────────────────────────────────────────
-// Layout (6x8 font, 128x64, rows snap to multiples of 8):
-//   y= 0  [LongModuleName]
-//   y= 8  INP: LEFT  | <<
-//   y=16  POS:*KNOB* | 50%    ← * flanking when row is selected
-//   y=24  FRQ: FLAT  | 25%
+// Layout (8x16 font, 128x64):
+//   y= 0  display_name centered          ← yellow bar (rows 0-15)
+//   y=16  INP:*FLAT* | 50%               ← blue
+//   y=32  POS: KNOB  | 75%               ← blue
+//   y=48  FRQ: FLAT  |100%               ← blue
 
 static const char *SOURCE_NAMES[] = {"FLAT", "KNOB", "LEFT", "BOTM", "WAVE"};
 
+// Draw one parameter row using the current font (8x16).
+// Format: "LBL:*SRC* |VAL"  (* flanking when selected, space otherwise)
+// Fits comfortably in 128px at 8px/char (up to 16 chars).
 static void draw_param_row(uint8_t y, const char *label,
                            uint8_t src, uint8_t val, int selected)
 {
-    char buf[24];
+    char buf[20];
     const char *sname = (src < SRC_COUNT) ? SOURCE_NAMES[src] : "???";
 
-    // Value field: << for LEFT, vv for BOTM, wav for WAVE, else percentage.
     char vbuf[6];
     if (src == SRC_LEFT)
     {
-        vbuf[0] = '<';
+        vbuf[0] = ' ';
         vbuf[1] = '<';
-        vbuf[2] = '\0';
+        vbuf[2] = '<';
+        vbuf[3] = '\0';
     }
     else if (src == SRC_BOTM)
     {
-        vbuf[0] = 'v';
+        vbuf[0] = ' ';
         vbuf[1] = 'v';
-        vbuf[2] = '\0';
+        vbuf[2] = 'v';
+        vbuf[3] = '\0';
     }
     else if (src == SRC_WAVE)
     {
@@ -130,9 +134,7 @@ static void draw_param_row(uint8_t y, const char *label,
         vbuf[3] = '\0';
     }
     else
-    {
         snprintf(vbuf, sizeof(vbuf), "%3d%%", (val * 100) / 127);
-    }
 
     snprintf(buf, sizeof(buf), "%.3s:%c%.4s%c|%s",
              label,
@@ -152,30 +154,35 @@ void display_module_view(Synth *s, uint8_t slot)
     const Module *m = &s->modules[slot];
     const ModuleDef *def = module_def(m->type);
 
+    ssd1306_setFixedFont(ssd1306xled_font8x16);
     ssd1306_clearScreen();
 
-    // Header: [LongModuleName]
-    char hdr[24];
+    // Yellow bar (y=0..15): display_name centered at 8px/char.
     const char *dname = (def->display_name && def->display_name[0])
                             ? def->display_name
                             : def->name;
-    snprintf(hdr, sizeof(hdr), "[%.19s]", dname);
-    ssd1306_printFixed(0, 0, hdr, STYLE_NORMAL);
+    uint8_t len = 0;
+    while (dname[len] && len < 16)
+        len++;
+    uint8_t hdr_x = (len < 16) ? (128 - len * 8) / 2 : 0;
+    ssd1306_printFixed(hdr_x, 0, dname, STYLE_NORMAL);
 
-    draw_param_row(8,
-                   "INP",
+    // Blue rows at y=16, 32, 48.
+    draw_param_row(16, "INP",
                    m->input_source, 0,
                    s->selected_param == SEL_INPUT);
 
-    draw_param_row(16,
+    draw_param_row(32,
                    (def->pr1_label && def->pr1_label[0]) ? def->pr1_label : "PR1",
                    m->param1_source, m->param1_value,
                    s->selected_param == SEL_PARAM1);
 
-    draw_param_row(24,
+    draw_param_row(48,
                    (def->pr2_label && def->pr2_label[0]) ? def->pr2_label : "PR2",
                    m->param2_source, m->param2_value,
                    s->selected_param == SEL_PARAM2);
+
+    ssd1306_setFixedFont(ssd1306xled_font6x8); // restore for other views
 }
 
 // ── Routing arrows ───────────────────────────────────────────────────────────
@@ -227,8 +234,8 @@ static const uint8_t ARROW_UP[8] = {
 // straddle a page boundary (non-page-aligned y).
 static void draw_bitmap_8x8(uint8_t x, uint8_t y, const uint8_t *bmp)
 {
-    uint8_t offset  = y & 7u;            // pixel offset within the starting page
-    uint8_t page_y  = y & ~7u;           // y rounded down to page boundary
+    uint8_t offset = y & 7u;  // pixel offset within the starting page
+    uint8_t page_y = y & ~7u; // y rounded down to page boundary
 
     for (uint8_t col = 0; col < 8; col++)
     {
@@ -251,7 +258,7 @@ static void draw_bitmap_8x8(uint8_t x, uint8_t y, const uint8_t *bmp)
             // Straddles two pages: split col_byte across page_a and page_b.
             // Lower (8-offset) sprite rows go into the upper bits of page_a.
             // Upper offset sprite rows go into the lower bits of page_b.
-            ssd1306_putPixels(x + col, page_y,     (uint8_t)(col_byte << offset));
+            ssd1306_putPixels(x + col, page_y, (uint8_t)(col_byte << offset));
             ssd1306_putPixels(x + col, page_y + 8, (uint8_t)(col_byte >> (8u - offset)));
         }
     }

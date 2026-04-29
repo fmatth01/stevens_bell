@@ -169,8 +169,8 @@ void synth_init(Synth *s)
 {
     // Set entire synth struct to zeros
     memset(s, 0, sizeof(*s));
-    s->global_view = true;
-    // s->scope_on = true;
+    // s->global_view = true;
+    s->scope_on = true;
     // s->scope_macro = true;
     s->selected_module = 7; // top right corner
 
@@ -415,4 +415,80 @@ void stop_button(Synth *s)
 void rotating_arrows(Synth *s)
 {
     s->global_view = !s->global_view;
+}
+
+// ── Display test presets ──────────────────────────────────────────────────────
+// Call one of these from main.c after synth_init() to load a known state.
+// Each preset sets scope_on=false and configures global_view as noted.
+
+// All 7 module types placed in the grid — good for checking global view labels
+// and selection rect.
+//   Bottom row (0-3): ---  OSC  MIX  ENV
+//   Top row    (4-7): LPF  HPF  LFO  ---
+// Horizontal arrows visible on all non-leftmost slots (SRC_LEFT default).
+void synth_preset_all_types(Synth *s)
+{
+    synth_init(s);
+    synth_set_module_type(s, 1, MOD_OSC);
+    synth_set_module_type(s, 2, MOD_MIX);
+    synth_set_module_type(s, 3, MOD_ENV);
+    synth_set_module_type(s, 4, MOD_LPF);
+    synth_set_module_type(s, 5, MOD_HPF);
+    synth_set_module_type(s, 6, MOD_LFO);
+    s->scope_on = false;
+    s->global_view = true;
+    s->selected_module = 7;
+}
+
+// LFO (slot 0) → OSC (slot 1) chain with a note playing.
+// Shows horizontal arrow between slots 0→1.
+// Slot 4 reads from slot 0 via BOTM to show a vertical arrow on col 0.
+//   Bottom row: LFO  OSC  ---  ---
+//   Top row:    ---  ---  ---  ---
+void synth_preset_lfo_osc(Synth *s)
+{
+    synth_init(s);
+    synth_set_module_type(s, 0, MOD_LFO);
+    synth_set_module_type(s, 1, MOD_OSC);
+    s->modules[1].input_source = SRC_LEFT; // OSC reads LFO output
+    s->modules[1].param2_value = 64;       // mid pitch
+    s->modules[4].input_source = SRC_BOTM; // vertical arrow on col 0
+    s->scope_on = false;
+    s->global_view = true;
+    s->selected_module = 1;
+    synth_note_on(s, 69, 127); // A4
+}
+
+// Mixed routing showing both horizontal and vertical arrows.
+//   Bottom row: LFO  OSC  ENV  ---
+//   Top row:    ---  MIX  LPF  ---
+// Horizontal: OSC←LFO, ENV←OSC
+// Vertical:   MIX←OSC (col 1), LPF←ENV (col 2)
+void synth_preset_mixed_routing(Synth *s)
+{
+    synth_init(s);
+    synth_set_module_type(s, 0, MOD_LFO);
+    synth_set_module_type(s, 1, MOD_OSC);
+    synth_set_module_type(s, 2, MOD_ENV);
+    synth_set_module_type(s, 5, MOD_MIX);
+    synth_set_module_type(s, 6, MOD_LPF);
+    s->modules[1].input_source = SRC_LEFT; // OSC ← LFO
+    s->modules[2].input_source = SRC_LEFT; // ENV ← OSC
+    s->modules[5].input_source = SRC_BOTM; // MIX ← OSC (vertical)
+    s->modules[6].input_source = SRC_BOTM; // LPF ← ENV (vertical)
+    s->scope_on = false;
+    s->global_view = true;
+    s->selected_module = 5;
+}
+
+// Enter module view for a specific slot with scope off.
+// Useful for checking the 8x16 module view layout.
+void synth_inspect_module(Synth *s, uint8_t slot)
+{
+    if (slot >= NUM_MODULES)
+        return;
+    s->selected_module = slot;
+    s->global_view = false;
+    s->scope_on = false;
+    s->selected_param = SEL_INPUT;
 }

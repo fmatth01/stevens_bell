@@ -62,6 +62,14 @@ int main(void)
 
     update_display(&synth); // initial draw
 
+    // ── Pick one to test the display ──
+    // synth_preset_all_types(&synth);     // global view: all module names in grid
+    synth_preset_lfo_osc(&synth); // global view: H+V arrows, note playing
+    // synth_preset_mixed_routing(&synth); // global view: both arrow types
+
+    // Or drop into module view for a specific slot:
+    // synth_inspect_module(&synth, 1);   // module view for slot 1 (OSC)
+
     // Main Loop
     while (1)
     {
