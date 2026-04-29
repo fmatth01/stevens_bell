@@ -29,6 +29,8 @@
 #define NOTE_ON 0b001
 #define CONTROL_CHANGE 0b011
 
+#define ON_LED A7
+
 // This function is called by printf() to handle the text string
 // We want it to be sent over the serial terminal, so we just delegate to that function
 int _write(int file, char *data, int len) {
@@ -80,6 +82,11 @@ int main() {
     // USE FOR PRINTING
     // char outbuf[LINE_BUFFER_LEN];
     // int len = 0;
+
+    //led to indicate program is up and running
+    gpio_config_mode(ON_LED, OUTPUT);
+    gpio_write(ON_LED, 1);
+
 
     //model: “I collect data bytes until I have 2 for the current status”
     int msg_type = NOTE_OFF;
