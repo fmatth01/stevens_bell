@@ -39,17 +39,17 @@ static void set_source(Synth *s, Module *m, uint8_t src)
     {
     case SEL_INPUT:
         buffer = m->input_buffer;
-        source = m->input_source;
+        source = &m->input_source;
         break;
 
     case SEL_PARAM1:
         buffer = m->param1_buffer;
-        source = m->param1_source;
+        source = &m->param1_source;
         break;
 
     case SEL_PARAM2:
         buffer = m->param2_buffer;
-        source = m->param2_source;
+        source = &m->param2_source;
         break;
 
     default:
@@ -244,4 +244,16 @@ void synth_process(Synth *s)
             def->process(m);
     }
     // DAC_OUT now holds one buffer of 16-bit samples ready to push to the DAC.
+}
+
+int16_t *synth_get_output(void) {
+    return DAC_OUT;
+}
+
+void synth_wire_slot0_to_dac(Synth *s) {
+    s->modules[0].buffer_out = DAC_OUT;
+}
+
+void synth_wire_slot1_to_dac(Synth *s) {
+    s->modules[1].buffer_out = DAC_OUT;
 }

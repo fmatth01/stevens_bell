@@ -55,10 +55,14 @@ void SystemClock_Config(void) {
 
 void enable_DAC(void) {
     RCC->APB1ENR1 |= RCC_APB1ENR1_DAC1EN;
-    RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
-    GPIOA->MODER |= GPIO_MODER_MODE4; // Analog Mode
-    GPIOA->PUPDR &= ~GPIO_PUPDR_PUPD4; // No pull-up/down  
-    DAC1->CR |= DAC_CR_EN1;
-    DAC1->DHR12R1 = 4095; 
+    RCC->AHB2ENR  |= RCC_AHB2ENR_GPIOAEN;
+
+    GPIOA->MODER  |=  GPIO_MODER_MODE4;
+    GPIOA->PUPDR  &= ~GPIO_PUPDR_PUPD4;
+
+    DAC1->CR = (4 << DAC_CR_TSEL1_Pos)  // TSEL = 100 = TIM2_TRGO
+             | DAC_CR_TEN1
+             | DAC_CR_DMAEN1
+             | DAC_CR_EN1;
 }
 
