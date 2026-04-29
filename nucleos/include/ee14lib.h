@@ -19,5 +19,6 @@ typedef int EE14Lib_Err;
 EE14Lib_Err gpio_config_alternate_function(EE14Lib_Pin pin, unsigned int function);
 EE14Lib_Err timer_config_pwm(TIM_TypeDef* const timer, const unsigned int freq_hz);
 EE14Lib_Err timer_config_channel_pwm(TIM_TypeDef* const timer, const EE14Lib_Pin pin, const unsigned int duty);
+EE14Lib_Err timer_configure(void);
 
 #endif

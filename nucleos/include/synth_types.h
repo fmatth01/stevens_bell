@@ -135,5 +135,8 @@ void synth_set_module_type(Synth *s, uint8_t slot, uint8_t type); // slot 1..8
 void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity);
 void synth_note_off(Synth *s, uint8_t midi_note);
 void synth_process(Synth *s); // fills DAC out buffer for one tick
+int16_t *synth_get_output(void);
+void synth_wire_slot0_to_dac(Synth *s);
+void synth_wire_slot1_to_dac(Synth *s);
 
 #endif // SYNTH_TYPES_H
