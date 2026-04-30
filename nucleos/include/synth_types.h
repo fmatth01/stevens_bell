@@ -97,6 +97,7 @@ typedef struct ModuleDef
     void (*init)(Module *m);
     void (*process)(Module *m); // one buffer
     void (*note_on)(Module *m, uint8_t midi_note, uint8_t velocity);
+    void (*note_off)(Module *m, uint8_t midi_note, uint8_t velocity);
 } ModuleDef;
 
 // The registry/dictionary. Defined in module_defs.c.

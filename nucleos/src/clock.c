@@ -1,6 +1,5 @@
 #include "stm32l4xx.h"
 
-// cube
 void SystemClock_Config(void) {
 
     // 1. Enable HSI16 and wait until ready

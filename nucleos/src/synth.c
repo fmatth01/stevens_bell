@@ -216,9 +216,13 @@ void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity)
 
 void synth_note_off(Synth *s, uint8_t midi_note)
 {
-    (void)midi_note;
     s->active_note = 0;
-    // Envelopes etc. that want a release stage can watch active_note.
+    for (int i = 0; i < NUM_MODULES; i++) {
+        Module *m = &s->modules[i];
+        const ModuleDef *def = module_def(m->type);
+        if (def->note_off)
+            def->note_off(m, midi_note, 0);
+    }
 }
 
 void synth_process(Synth *s)
