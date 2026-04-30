@@ -1,21 +1,21 @@
 #include "ee14lib.h"
 
-// static void enable_timer(TIM_TypeDef* const timer)
-// {
-//     // Enable the clock for the timer
-//     if(timer == TIM1){
-//         RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
-//     }
-//     else if(timer == TIM2){
-//         RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
-//     }
-//     else if(timer == TIM15){
-//         RCC->APB2ENR |= RCC_APB2ENR_TIM15EN;
-//     }
-//     else if(timer == TIM16){
-//         RCC->APB2ENR |= RCC_APB2ENR_TIM16EN;
-//     }
-// }
+void enable_timer(TIM_TypeDef* const timer)
+{
+    // Enable the clock for the timer
+    if(timer == TIM1){
+        RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
+    }
+    else if(timer == TIM2){
+        RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
+    }
+    else if(timer == TIM15){
+        RCC->APB2ENR |= RCC_APB2ENR_TIM15EN;
+    }
+    else if(timer == TIM16){
+        RCC->APB2ENR |= RCC_APB2ENR_TIM16EN;
+    }
+}
 
 // /* Configure a timer in free-running mode so that it can be used to keep track of time.
 //  *   timer: which hardware timer to use (TIM1, TIM2, etc.)

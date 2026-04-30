@@ -11,6 +11,33 @@ char circbuf[CIRCBUF_SIZE];
 int circbuf_head = 0;
 int circbuf_tail = 0;
 
+
+void usart1_midi_init(uint32_t baud)
+{
+    // 1. Enable clocks
+    RCC->APB2ENR  |= RCC_APB2ENR_USART1EN;   // USART1 is on APB2
+    RCC->AHB2ENR  |= RCC_AHB2ENR_GPIOAEN;    // adjust if your RX pin is on a different port
+
+    // 2. Configure GPIO pin for USART1_RX (e.g. PA10, AF7)
+    //    Set mode to Alternate Function
+    GPIOA->MODER  &= ~(3U << (10 * 2));
+    GPIOA->MODER  |=  (2U << (10 * 2));       // AF mode
+    //    Set AF7 for USART1
+    GPIOA->AFR[1] &= ~(0xF << ((10 - 8) * 4));
+    GPIOA->AFR[1] |=  (7U  << ((10 - 8) * 4));
+
+    // 3. Configure baud rate
+    // USART1->BRR = SystemCoreClock / baud;     // assumes no prescaler
+    USART1->BRR = 80000000U / baud;             //explicity use 80MHz
+
+    // 4. Enable receiver + RXNE interrupt
+    USART1->CR1 = USART_CR1_RE | USART_CR1_RXNEIE | USART_CR1_UE;
+
+    // 5. Enable interrupt in NVIC
+    NVIC_SetPriority(USART1_IRQn, 1);
+    NVIC_EnableIRQ(USART1_IRQn);
+}
+
 /**
  * Configure either USART with the "normal" defaults:
  * Set for 8 data bits, 1 start & 1 stop bit, 16x oversampling
