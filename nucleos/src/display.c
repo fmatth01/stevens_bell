@@ -128,10 +128,11 @@ static void draw_param_row(uint8_t y, const char *label,
     }
     else if (src == SRC_WAVE)
     {
-        vbuf[0] = 'w';
-        vbuf[1] = 'a';
-        vbuf[2] = 'v';
-        vbuf[3] = '\0';
+        vbuf[0] = ' ';
+        vbuf[1] = 'w';
+        vbuf[2] = 'a';
+        vbuf[3] = 'v';
+        vbuf[4] = '\0';
     }
     else
         snprintf(vbuf, sizeof(vbuf), "%3d%%", (val * 100) / 127);

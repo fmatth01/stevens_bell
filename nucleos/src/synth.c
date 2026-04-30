@@ -1,4 +1,5 @@
 #include "synth_types.h"
+#include "wavetable.h"
 #include <string.h>
 
 // Process order: bottom row first (left → right), then top row (left → right).
@@ -32,8 +33,8 @@ static Module *neighbor_bottom(Synth *s, uint8_t slot)
 static void set_source(Synth *s, Module *m, uint8_t src)
 {
     // Set buffer var to the buffer we're changing the source of
-    int16_t *buffer;
-    uint8_t *source; // pointer to module's current source variable
+    int16_t *buffer = NULL;
+    uint8_t *source = NULL; // pointer to module's current source variable
     // Update source for currently selected parameter in module view
     switch (s->selected_param)
     {
@@ -91,8 +92,6 @@ static void set_source(Synth *s, Module *m, uint8_t src)
 
 // Fill a destination buffer from the given source. For FLAT/KNOB we write the
 // scalar across the whole buffer; for LEFT/BOTM we copy the neighbor's output;
-// for WAVE we expect the wavetable subsystem to have pre-filled it,
-// so we leave it alone.
 static void fill_buffer(Synth *s, Module *m, int16_t *dst,
                         uint8_t source, uint8_t scalar_value)
 {
@@ -102,7 +101,7 @@ static void fill_buffer(Synth *s, Module *m, int16_t *dst,
     {
         // Scale flat value to 16-bit sample
         // Scale 0..127 → 0..32767, aka ~max_val of int16_t
-        int16_t v = (int16_t)(scalar_value * 258); // ~ *32767/127
+        int16_t v = (int16_t)(scalar_value * 258); // ~ * 32767/127
         for (int i = 0; i < BUFFER_SIZE; i++)
             dst[i] = v; // Fill every element in the buffer with the same value
         break;
@@ -138,10 +137,10 @@ static void fill_buffer(Synth *s, Module *m, int16_t *dst,
         break;
     }
     case SRC_WAVE:
-        // Assume wavetable loader has already filled this buffer.
+        // Handled in OSC and LFO process code
         break;
     default:
-        // Fill with zeros. rewrite possible: could also be case where left/botm doesn't work
+        // Any other case just set to zeros (protecting from undefined behavior)
         memset(dst, 0, sizeof(int16_t) * BUFFER_SIZE);
         break;
     }
@@ -208,7 +207,8 @@ void synth_set_module_type(Synth *s, uint8_t slot, uint8_t type)
 
 void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity)
 {
-    s->active_note = midi_note;
+    s->note_v_oct = midi_note;
+    s->note_on = true;
     // s->active_velocity = velocity; // stretch goal
 
     // Dispatch to every module that cares.
@@ -226,8 +226,9 @@ void synth_note_on(Synth *s, uint8_t midi_note, uint8_t velocity)
 void synth_note_off(Synth *s, uint8_t midi_note)
 {
     (void)midi_note;
-    s->active_note = 0;
-    // Envelopes etc. that want a release stage can watch active_note.
+    s->note_on = false;
+    // note_v_oct intentionally preserved — OSC continues at last pitch without a gate.
+    // Envelopes etc. that want a release stage can watch note_on.
 }
 
 void synth_update_cc(Synth *s, uint8_t cc_channel, uint8_t cc_val)
@@ -288,9 +289,12 @@ void synth_process(Synth *s)
         return;
     }
 
+    // Loop through each module and process it
     for (int i = 0; i < NUM_MODULES; i++)
     {
+        // Pointer to module struct - actual state of module
         Module *m = &s->modules[i];
+        // Pointer to module definition - names, process function pointers, etc.
         const ModuleDef *def = module_def(m->type);
 
         // Resolve this module's three incoming buffers before processing.
@@ -298,6 +302,7 @@ void synth_process(Synth *s)
         fill_buffer(s, m, m->param1_buffer, m->param1_source, m->param1_value);
         fill_buffer(s, m, m->param2_buffer, m->param2_source, m->param2_value);
 
+        // Process the module if it has a process function (not an empty module)
         if (def->process)
             def->process(m);
     }
@@ -417,6 +422,72 @@ void rotating_arrows(Synth *s)
     s->global_view = !s->global_view;
 }
 
+void top_slider(Synth *s)
+{
+    // If module view is on and scope mode is not on
+    // (Scope behavior handled by display)
+    if (!s->global_view && !s->scope_on)
+    {
+        // Pointer to currently selected module
+        Module *m = &s->modules[s->selected_module];
+        // Change source of currently selected parameter
+        // (SRC_COUNT - 1) to prevent SRC_WAVE from being accessible
+        if (s->selected_param == SEL_INPUT)
+        {
+            // Only the inputs of oscillators and LFOs are allowed to have
+            // wavetables as their source
+            if (m->type == MOD_OSC || MOD_LFO)
+            {
+                m->input_source = s->top_slider * SRC_COUNT / 128;
+            }
+            else
+            {
+                m->input_source = s->top_slider * (SRC_COUNT - 1) / 128;
+            }
+        }
+        else if (s->selected_param == SEL_PARAM1)
+        {
+            m->param1_source = s->top_slider * (SRC_COUNT - 1) / 128;
+        }
+        else if (s->selected_param == SEL_PARAM2)
+        {
+            m->param2_source = s->top_slider * (SRC_COUNT - 1) / 128;
+        }
+    }
+}
+
+void bottom_slider(Synth *s)
+{
+    // If module view is on and scope mode is not on
+    // (Scope behavior handled by display)
+    if (!s->global_view && !s->scope_on)
+    {
+        // Pointer to currently selected module
+        Module *m = &s->modules[s->selected_module];
+        // Select a different wavetable in oscillator modules
+        if ((m->type == MOD_OSC || MOD_LFO) && s->selected_param == SEL_INPUT)
+        {
+            // Update state_c (selected wavetable) with new slider CC value
+            // Value between 0..(TABLE_COUNT - 1), corrosponding to indecies
+            // In the table array
+            m->input_value = s->bottom_slider * TABLE_COUNT / 128;
+        }
+        // Set a different flat value for any parameter in any module
+        else if (s->selected_param == SEL_INPUT && m->input_source == SRC_FLAT)
+        {
+            m->input_value = s->bottom_slider;
+        }
+        else if (s->selected_param == SEL_PARAM1 && m->param1_source == SRC_FLAT)
+        {
+            m->param1_value = s->bottom_slider;
+        }
+        else if (s->selected_param == SEL_PARAM2 && m->param2_source == SRC_FLAT)
+        {
+            m->param2_value = s->bottom_slider;
+        }
+    }
+}
+
 // ── Display test presets ──────────────────────────────────────────────────────
 // Call one of these from main.c after synth_init() to load a known state.
 // Each preset sets scope_on=false and configures global_view as noted.
@@ -448,22 +519,17 @@ void synth_preset_all_types(Synth *s)
 void synth_preset_lfo_osc(Synth *s)
 {
     synth_init(s);
-    synth_set_module_type(s, 0, MOD_LFO);
-    synth_set_module_type(s, 1, MOD_OSC);
-    s->modules[1].input_source = SRC_LEFT; // OSC reads LFO output
-    s->modules[1].param2_value = 64;       // mid pitch
-    s->modules[4].input_source = SRC_BOTM; // vertical arrow on col 0
-    s->scope_on = false;
+    // synth_set_module_type(s, 3, MOD_LFO);
+    synth_set_module_type(s, 7, MOD_OSC);
+    s->modules[7].param2_value = 64; // mid pitch
+    // s->modules[7].param1_source = SRC_BOTM; // wavetable from lfo
+    s->scope_on = true;
     s->global_view = true;
-    s->selected_module = 1;
+    s->scope_macro = false;
+    s->selected_module = 7;
     synth_note_on(s, 69, 127); // A4
 }
 
-// Mixed routing showing both horizontal and vertical arrows.
-//   Bottom row: LFO  OSC  ENV  ---
-//   Top row:    ---  MIX  LPF  ---
-// Horizontal: OSC←LFO, ENV←OSC
-// Vertical:   MIX←OSC (col 1), LPF←ENV (col 2)
 void synth_preset_mixed_routing(Synth *s)
 {
     synth_init(s);
@@ -482,7 +548,6 @@ void synth_preset_mixed_routing(Synth *s)
 }
 
 // Enter module view for a specific slot with scope off.
-// Useful for checking the 8x16 module view layout.
 void synth_inspect_module(Synth *s, uint8_t slot)
 {
     if (slot >= NUM_MODULES)

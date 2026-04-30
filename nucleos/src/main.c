@@ -1,5 +1,4 @@
 #include "stm32l4xx.h"
-#include "basic.h"
 #include "clock.h"
 #include "dma.h"
 #include <stdio.h>
@@ -58,7 +57,7 @@ int main(void)
     audio_callback(dma_buffer + BUFFER_SIZE, BUFFER_SIZE);
 
     dma_configure();
-    // timer_configure();
+    timer_configure();
 
     update_display(&synth); // initial draw
 
@@ -82,7 +81,7 @@ int main(void)
             needs_redraw = true;
         }
 
-        if (needs_redraw)
+        if (needs_redraw || synth.scope_on)
         {
             update_display(&synth);
             needs_redraw = false;

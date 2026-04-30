@@ -53,6 +53,7 @@ typedef struct Module
     // Input
     int16_t input_buffer[BUFFER_SIZE];
     uint8_t input_source; // SourceType
+    uint8_t input_value;  // 0..127
 
     // Param 1
     int16_t param1_buffer[BUFFER_SIZE];
@@ -85,6 +86,7 @@ typedef struct ModuleDef
     const char *pr2_label; // "FRQ", "DEC", "AMT", …
 
     uint8_t inp_default_src; // SourceType
+    uint8_t inp_default_val;
     uint8_t pr1_default_src;
     uint8_t pr1_default_val;
     uint8_t pr2_default_src;
@@ -125,23 +127,24 @@ typedef struct Synth
     uint8_t selected_param;  // SelectedParam enum
 
     // Current note state. Oscillators read this as an implicit v/oct bus.
-    uint8_t active_note; // 0 = no note active
+    bool note_on;       // gate: true while a key is held
+    uint8_t note_v_oct; // MIDI note number (persists after note_off so OSC keeps playing)
     // uint8_t  active_velocity;    // we don't want velocity yet, stretch goal
 
     Module modules[8]; // [0..3] bottom row, [4..7] top row
 
     // Scope state
-    int16_t  scope_micro_buf[BUFFER_SIZE]; // micro: accumulated sample points
-    uint8_t  scope_micro_count;            // micro: samples collected so far
-    int16_t  scope_bar_min[128];           // macro: min value per bar column
-    int16_t  scope_bar_max[128];           // macro: max value per bar column
-    uint8_t  scope_bar_idx;               // macro: ring write position (0..127)
+    int16_t scope_micro_buf[BUFFER_SIZE]; // micro: accumulated sample points
+    uint8_t scope_micro_count;            // micro: samples collected so far
+    int16_t scope_bar_min[128];           // macro: min value per bar column
+    int16_t scope_bar_max[128];           // macro: max value per bar column
+    uint8_t scope_bar_idx;                // macro: ring write position (0..127)
     uint16_t scope_buf_counter;           // macro: buffers since last bar update
-    uint8_t  scope_skip_idx;             // index into skip sequence (0..SCOPE_SKIP_MAX_IDX)
+    uint8_t scope_skip_idx;               // index into skip sequence (0..SCOPE_SKIP_MAX_IDX)
     uint16_t scope_frame_counter;         // collections since last display push
 } Synth;
 
-#define SCOPE_SKIP_MAX_IDX 9  // last valid index into {0,1,2,4,8,16,32,64,128,256}
+#define SCOPE_SKIP_MAX_IDX 9 // last valid index into {0,1,2,4,8,16,32,64,128,256}
 
 // ── API ──────────────────────────────────────────────────────────────────────
 void synth_init(Synth *s);
@@ -154,9 +157,9 @@ int16_t *synth_get_output(void);
 void synth_unpack_packet(Synth *s, uint8_t b);
 
 // Display test presets — call from main.c to load a known visual state
-void synth_preset_all_types(Synth *s);    // global view, all 7 module types
-void synth_preset_lfo_osc(Synth *s);     // global view, LFO→OSC chain + note
-void synth_preset_mixed_routing(Synth *s);// global view, H+V arrows
+void synth_preset_all_types(Synth *s);             // global view, all 7 module types
+void synth_preset_lfo_osc(Synth *s);               // global view, LFO→OSC chain + note
+void synth_preset_mixed_routing(Synth *s);         // global view, H+V arrows
 void synth_inspect_module(Synth *s, uint8_t slot); // module view for one slot
 
 // Button Triggered Functions

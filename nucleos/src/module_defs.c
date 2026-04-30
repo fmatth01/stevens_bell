@@ -5,10 +5,10 @@
 #endif
 // #include "basic.h"
 #include "math.h"
+#include "wavetable.h"
 
 extern const int16_t audio_data[];
-#define AUDIO_NUM_SAMPLES 1024U
-// #define AUDIO_SAMPLE_RATE 1024U
+#define WINDOW_SIZE 128U
 #define AUDIO_SAMPLE_RATE 44100U
 // ── Forward declarations for the per-type functions ──────────────────────────
 // Each module type provides 0..3 of the following: init, process, note_on.
@@ -43,10 +43,11 @@ static void empty_process(Module *m);
 const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
     [MOD_EMP] = {
         .name = "---",
-        .display_name = "Empty", // TODO: fill in real long-form names
+        .display_name = "Empty",
         .pr1_label = "---",
         .pr2_label = "---",
         .inp_default_src = SRC_LEFT,
+        .inp_default_val = 0,
         .pr1_default_src = SRC_FLAT,
         .pr1_default_val = 0,
         .pr2_default_src = SRC_FLAT,
@@ -61,6 +62,7 @@ const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
         .pr1_label = "POS",
         .pr2_label = "FRQ",
         .inp_default_src = SRC_WAVE,
+        .inp_default_val = 0,
         .pr1_default_src = SRC_KNOB,
         .pr1_default_val = 0,
         .pr2_default_src = SRC_FLAT,
@@ -75,6 +77,7 @@ const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
         .pr1_label = "OTH",
         .pr2_label = "MIX",
         .inp_default_src = SRC_LEFT,
+        .inp_default_val = 0,
         .pr1_default_src = SRC_FLAT,
         .pr1_default_val = 0,
         .pr2_default_src = SRC_KNOB,
@@ -89,6 +92,7 @@ const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
         .pr1_label = "ATT",
         .pr2_label = "DEC",
         .inp_default_src = SRC_FLAT,
+        .inp_default_val = 127,
         .pr1_default_src = SRC_FLAT,
         .pr1_default_val = 63,
         .pr2_default_src = SRC_KNOB,
@@ -103,6 +107,7 @@ const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
         .pr1_label = "CUT",
         .pr2_label = "AMT",
         .inp_default_src = SRC_LEFT,
+        .inp_default_val = 0,
         .pr1_default_src = SRC_FLAT,
         .pr1_default_val = 63,
         .pr2_default_src = SRC_KNOB,
@@ -117,6 +122,7 @@ const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
         .pr1_label = "CUT",
         .pr2_label = "AMT",
         .inp_default_src = SRC_LEFT,
+        .inp_default_val = 0,
         .pr1_default_src = SRC_FLAT,
         .pr1_default_val = 63,
         .pr2_default_src = SRC_KNOB,
@@ -127,10 +133,11 @@ const ModuleDef MODULE_DEFS[MOD_TYPE_COUNT] = {
     },
     [MOD_LFO] = {
         .name = "LFO",
-        .display_name = "LFO",
+        .display_name = "Low Freq Osc",
         .pr1_label = "POS",
         .pr2_label = "FRQ",
         .inp_default_src = SRC_WAVE,
+        .inp_default_val = 0,
         .pr1_default_src = SRC_KNOB,
         .pr1_default_val = 0,
         .pr2_default_src = SRC_FLAT,
@@ -160,6 +167,7 @@ static void osc_init(Module *m)
 {
     m->state_a = 0; // phase accumulator
     m->state_b = 0; // current pitch in v/oct units (set on note_on)
+    // m->state_c = 0; // selected wavetable
 }
 static void osc_note_on(Module *m, uint8_t n, uint8_t v)
 {
@@ -169,31 +177,67 @@ static void osc_note_on(Module *m, uint8_t n, uint8_t v)
 
 static void osc_process(Module *m)
 {
+    // Guard for nullptr
     if (!m->buffer_out)
         return;
 
-    float freq = 20.0f * powf(2.0f, (m->param2_value / 127.0f) * 8.97f);
-    uint32_t step = (uint32_t)(freq * (float)AUDIO_NUM_SAMPLES * 65536.0f / 44100.0f);
-    if (step == 0)
-        step = 1;
+    // Midi note as number of semitones above or below A4
+    int16_t note_delta = m->state_b - 69;
 
+    // Shift note_delta by frequency knob
+    // (centered at 0, +/- 36 steps in either direction)
+    note_delta += ((m->param2_value - 64) * 36 / 127);
+
+    // Calculate frequency of note using 440 * 2^(n/12), where n is
+    // the number of semitones above or below 440hz = Note A4 = Midi note 69
+    float freq = 440.0f * powf(2.0f, ((float)note_delta / 12.0f));
+
+    // Calculate step value between samples
+    // freq * window_size / 44100 = samples to step per tick/DAC call
+    // scale everything by 2^16 and store for later to retain decimals
+    uint32_t step = (uint32_t)(freq * (float)WINDOW_SIZE * 65536.0f / 44100.0f);
+
+    // Guard against step == 0 since we must always step a little bit
+    if (step == 0)
+    {
+        step = 1;
+    }
+
+    // Loop through to fill buffer
     for (int i = 0; i < BUFFER_SIZE; i++)
     {
-        // always read LFO from input_buffer
-        // if no LFO connected, input_buffer will just be zeros (from fill_buffer default)
-        int32_t lfo = m->input_buffer[i];
-        int32_t depth = m->param1_value / 2; // back to subtle
-        int32_t mod_step = (int32_t)step + (lfo * (int32_t)depth) / 256;
-        if (mod_step < 1)
-            mod_step = 1;
+        // Get current and next indecies, and fraction of current phase
+        uint32_t idx = (m->state_a >> 16) % WINDOW_SIZE;
+        uint32_t next = (idx + 1) % WINDOW_SIZE;
+        uint32_t phase_frac = m->state_a & 0xFFFF;
 
-        uint32_t idx = (m->state_a >> 16) % AUDIO_NUM_SAMPLES;
-        uint32_t next = (idx + 1) % AUDIO_NUM_SAMPLES;
-        uint32_t frac = m->state_a & 0xFFFF;
-        int32_t s0 = audio_data[idx];
-        int32_t s1 = audio_data[next];
-        m->buffer_out[i] = (int16_t)(s0 + (((s1 - s0) * (int32_t)frac) >> 16));
-        m->state_a += (uint32_t)mod_step;
+        // If source is set to wavetable, manually throw the correct samples
+        // in the input buffer
+        int32_t s0, s1;
+        if (m->input_source == SRC_WAVE)
+        {
+            // Grab the wavetable instance we're using
+            const Wavetable *wt = get_wavetable(m->input_value);
+
+            // Scale window start by POS value (param1)
+            uint32_t window_start = (wt->length - WINDOW_SIZE) * m->param1_value / 128;
+
+            // Get samples direct from wavetable
+            s0 = wt->samples[idx + window_start];
+            s1 = wt->samples[next + window_start];
+        }
+        else
+        {
+            // Just get actual samples from input buffer
+            s0 = m->input_buffer[idx % BUFFER_SIZE];
+            s1 = m->input_buffer[next % BUFFER_SIZE];
+        }
+
+        // Linearly interpolate the samples using phase fraction
+        m->buffer_out[i] = (int16_t)(s0 + (((s1 - s0) * (int32_t)phase_frac) >> 16));
+
+        // Increase phase by step
+        m->state_a += step % (WINDOW_SIZE << 16);
     }
 }
 // ── MIX ──────────────────────────────────────────────────────────────────────
@@ -242,23 +286,84 @@ static void lfo_init(Module *m) { m->state_a = 0; }
 
 static void lfo_process(Module *m)
 {
+    // if (!m->buffer_out)
+    //     return;
+
+    // float freq = 0.01f * powf(2.0f, (m->param2_value / 127.0f) * 10.97f);
+    // uint32_t step = (uint32_t)(freq * (float)WINDOW_SIZE * 65536.0f / 44100.0f);
+    // if (step == 0)
+    //     step = 1;
+
+    // for (int i = 0; i < BUFFER_SIZE; i++)
+    // {
+    //     uint32_t idx = (m->state_a >> 16) % WINDOW_SIZE;
+    //     uint32_t next = (idx + 1) % WINDOW_SIZE;
+    //     uint32_t frac = m->state_a & 0xFFFF;
+    //     int32_t s0 = audio_data[idx];
+    //     int32_t s1 = audio_data[next];
+    //     // output raw int16 — OSC handles the depth scaling
+    //     m->buffer_out[i] = (int16_t)(s0 + (((s1 - s0) * (int32_t)frac) >> 16));
+    //     m->state_a += step;
+    // }
+
+    // Guard for nullptr
     if (!m->buffer_out)
         return;
 
-    float freq = 0.01f * powf(2.0f, (m->param2_value / 127.0f) * 10.97f);
-    uint32_t step = (uint32_t)(freq * (float)AUDIO_NUM_SAMPLES * 65536.0f / 44100.0f);
-    if (step == 0)
-        step = 1;
+    // Shift note_delta by frequency knob
+    // (centered at 0, +/- 36 steps in either direction)
+    int16_t note = ((m->param2_value - 64) * 36 / 127) - 72;
 
+    // Calculate frequency of note using 440 * 2^(n/12), where n is
+    // the number of semitones above or below 440hz = Note A4 = Midi note 69
+    // LFO EDIT: note is dropped by 72 semitones (6 octaves) to hit A-2
+    float freq = 440.0f * powf(2.0f, (float)note / 12.0f);
+
+    // Calculate step value between samples
+    // freq * window_size / 44100 = samples to step per tick/DAC call
+    // scale everything by 2^16 and store for later to retain decimals
+    uint32_t step = (uint32_t)(freq * (float)WINDOW_SIZE * 65536.0f / 44100.0f);
+
+    // Guard against step == 0 since we must always step a little bit
+    if (step == 0)
+    {
+        step = 1;
+    }
+
+    // Loop through to fill buffer
     for (int i = 0; i < BUFFER_SIZE; i++)
     {
-        uint32_t idx = (m->state_a >> 16) % AUDIO_NUM_SAMPLES;
-        uint32_t next = (idx + 1) % AUDIO_NUM_SAMPLES;
-        uint32_t frac = m->state_a & 0xFFFF;
-        int32_t s0 = audio_data[idx];
-        int32_t s1 = audio_data[next];
-        // output raw int16 — OSC handles the depth scaling
-        m->buffer_out[i] = (int16_t)(s0 + (((s1 - s0) * (int32_t)frac) >> 16));
-        m->state_a += step;
+        // Get current and next indecies, and fraction of current phase
+        uint32_t idx = (m->state_a >> 16) % WINDOW_SIZE;
+        uint32_t next = (idx + 1) % WINDOW_SIZE;
+        uint32_t phase_frac = m->state_a & 0xFFFF;
+
+        // If source is set to wavetable, manually throw the correct samples
+        // in the input buffer
+        int32_t s0, s1;
+        if (m->input_source == SRC_WAVE)
+        {
+            // Grab the wavetable instance we're using
+            const Wavetable *wt = get_wavetable(m->input_value);
+
+            // Scale window start by POS value (param1)
+            uint32_t window_start = (wt->length - WINDOW_SIZE) * m->param1_value / 128;
+
+            // Get samples direct from wavetable
+            s0 = wt->samples[idx + window_start];
+            s1 = wt->samples[next + window_start];
+        }
+        else
+        {
+            // Just get actual samples from input buffer
+            s0 = m->input_buffer[idx % BUFFER_SIZE];
+            s1 = m->input_buffer[next % BUFFER_SIZE];
+        }
+
+        // Linearly interpolate the samples using phase fraction
+        m->buffer_out[i] = (int16_t)(s0 + (((s1 - s0) * (int32_t)phase_frac) >> 16));
+
+        // Increase phase by step
+        m->state_a += step % (WINDOW_SIZE << 16);
     }
 }
