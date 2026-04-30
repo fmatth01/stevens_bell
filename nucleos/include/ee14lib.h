@@ -74,4 +74,6 @@ int serial_write_nonblocking(USART_TypeDef *USARTx, const char *buffer, int len)
 char serial_read(USART_TypeDef *USARTx);
 void usart1_init(int baud);
 
+void usart1_midi_init(uint32_t baud);
+
 #endif
