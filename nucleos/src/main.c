@@ -86,7 +86,7 @@ int main(void)
     // timer_configure();
 
     update_display(&synth); // initial draw
-    enable_timer(TIM2);
+    enable_timer(TIM6);
     int last_draw = 0;
     int now = 0;
 
@@ -112,7 +112,7 @@ int main(void)
             needs_redraw = true;
         }
 
-        now = timer_get_count(TIM2);
+        now = timer_get_count(TIM6);
         if (needs_redraw && (now - last_draw > 100))
         {
             update_display(&synth);
