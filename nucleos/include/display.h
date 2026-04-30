@@ -21,4 +21,5 @@ void scope_update(Synth *s);
 // Public Function to update display
 void update_display(Synth *s);
 
+
 #endif // DISPLAY_H
